@@ -27,45 +27,138 @@ module fairy_exe_stage(
 	input [31:0] inst_i,
 	input [31:0] pc_i,
 	input exception_i,
+	input [4:0] reg_waddr_i,
+	input reg_we_i,
+	input delayslot_i,
+	input eret_i,
+	
+	input hilo_we_i,
+	input hilo_sel_i,
+	output hilo_we_o,
+	output hilo_sel_o,
+	
+	input unaligned_addr_i,
+	output unaligned_addr_o,
+	input illegal_inst_i,
+	output illegal_inst_o,
 	
 	output [31:0] debug_adder_a,
 	output [31:0] debug_adder_b,
 	output [31:0] debug_imm_op,
 	output [31:0] debug_adder_b0,
 	output [31:0] debug_shift_emptybit,
+	output [31:0] debug_adder_sum,
 	
 	output [31:0] data_o,
 	output [31:0] op1_o,
 	output [31:0] inst_o,
 	output [31:0] pc_o,
-	output overflow_o
+	output overflow_o,
+	output [4:0] reg_waddr_o,
+	output reg_we_o,
+	output delayslot_o
 );
 
 // Input
-wire [31:0] op0 = op0_i;
-wire exception = exception_i;
+
 // Output
 assign data_o = data;
 assign inst_o = inst;
 assign pc_o = pc;
 assign overflow_o = overflow;
 assign op1_o = op1;
+assign reg_waddr_o = reg_waddr;
+assign reg_we_o = reg_we;
+assign delayslot_o = delayslot;
+assign hilo_we_o = hilo_we;
+assign hilo_sel_o = hilo_sel;
+assign unaligned_addr_o = unaligned_addr;
+assign illegal_inst_o = illegal_inst;
 assign debug_adder_a = adder_a;
 assign debug_adder_b = adder_b;
 assign debug_imm_op = {32{imm_op}};
 assign debug_adder_b0 = adder_b0;
 assign debug_shift_emptybit = {32{shift_emptybit}};
+assign debug_adder_sum = adder_sum;
+
+wire reset = ~reset_n | exception_i | eret_i;
 
 reg [31:0] inst;
 reg [31:0] data;
 reg overflow;
 reg [31:0] pc;
 reg [31:0] op1;
+reg [4:0] reg_waddr;
+reg reg_we;
+reg delayslot;
+reg hilo_we, hilo_sel;
+reg unaligned_addr;
+reg illegal_inst;
+
+// illegal_inst
+always @(posedge clk)
+begin
+	if(reset)
+		illegal_inst <= 0;
+	else
+		illegal_inst <= illegal_inst_i;
+end
+
+
+// unaligned_addr
+always @(posedge clk)
+begin
+	if(reset)
+		unaligned_addr <= 0;
+	else
+		unaligned_addr <= unaligned_addr_i;
+end
+
+// hilo_we && hilo_sel
+always @(posedge clk)
+begin
+	if(reset) begin
+		hilo_we <= 0;
+		hilo_sel <= 0;
+	end
+	else begin
+		hilo_we <= hilo_we_i;
+		hilo_sel <= hilo_sel_i;
+	end
+end
+
+// delayslot
+always @(posedge clk)
+begin
+	if(reset)
+		delayslot <= 0;
+	else
+		delayslot <= delayslot_i;
+end
+
+// reg_we
+always @(posedge clk)
+begin
+	if(reset)
+		reg_we <= 0;
+	else
+		reg_we <= reg_we_i;
+end
+
+// reg_waddr
+always @(posedge clk)
+begin
+	if(reset)
+		reg_waddr <= 31'b0;
+	else
+		reg_waddr <= reg_waddr_i;
+end
+
 
 // op1
 always @(posedge clk)
 begin
-	if(reset_n == 0 || exception)
+	if(reset)
 		op1 <= 31'b0;
 	else
 		op1 <= op1_i;
@@ -74,7 +167,7 @@ end
 // pc
 always @(posedge clk)
 begin
-	if(reset_n == 0 || exception)
+	if(reset)
 		pc <= 31'b0;
 	else
 		pc <= pc_i;
@@ -83,7 +176,7 @@ end
 // inst
 always @(posedge clk)
 begin
-	if(reset_n == 0 || exception)
+	if(reset)
 		inst <= 32'b0;
 	else
 		inst <= inst_i;
@@ -99,7 +192,7 @@ wire [31:0] result = {31'b0, lt} & {32{slt_op}}
 					;
 always @(posedge clk)
 begin
-	if(reset_n == 0 || exception)
+	if(reset)
 		data <= 32'b0;
 	else
 		data <= result;
@@ -108,7 +201,7 @@ end
 // overflow
 always @(posedge clk)
 begin
-	if(reset_n == 0 || exception)
+	if(reset)
 		overflow <= 0;
 	else
 		overflow <= adder_overflow & overflow_op;
@@ -130,8 +223,8 @@ assign lt = sltu_op & (		// unsigned
 				| (adder_b0[31] & adder_sum[31]) 
 			)
 			| slts_op & (		// signed
-				(adder_a[31] ^~ adder_b[31]) & adder_sum[31]		// same sign
-				| (adder_a[31] ^ adder_b[31]) & (adder_a[31] ? 1'b1 : 1'b0)	// different sign
+				(adder_a[31] ^~ adder_b0[31]) & adder_sum[31]		// same sign
+				| (adder_a[31] ^ adder_b0[31]) & (adder_a[31] ? 1'b1 : 1'b0)	// different sign
 			);
 
 // adder
@@ -159,8 +252,8 @@ wire adder_c0;
 wire adder_overflow = (~adder_a[31] & ~adder_b[31] & adder_sum[31])
 							| (adder_a[31] & adder_b[31] & ~adder_sum[31]);
 wire carry_op = sub_op | slt_op;
-assign adder_a = link_op ? pc_i : op0;
-assign adder_b0 = imm_op ? {{16{inst_i[15]}},inst_i[15:0]} : op1;
+assign adder_a = link_op ? pc_i : op0_i;
+assign adder_b0 = imm_op ? {{16{inst_i[15]}},inst_i[15:0]} : op1_i;
 assign adder_b = {32{sub_op | slt_op}} & ~adder_b0
 					| {32{add_op | mem_op}} & adder_b0
 					| {32{link_op}} & 32'd8
@@ -187,11 +280,9 @@ wire shift_var_op = inst_SLLV | inst_SRLV | inst_SRAV;
 wire shift_logic = inst_SLL | inst_SLLV | inst_SRL | inst_SRLV;
 wire shift_emptybit = shift_logic ? 1'b0 : shift_operand[31];
 wire shift_left = inst_SLL | inst_SLLV;
-wire [31:0] shift_operand = op1;	// from rt
-wire [4:0] shift_count = shift_var_op ? op0[4:0] : inst_i[10:6];	// [4:0] from rs : sa
+wire [31:0] shift_operand = op1_i;	// from rt
+wire [4:0] shift_count = shift_var_op ? op0_i[4:0] : inst_i[10:6];	// [4:0] from rs : sa
 
-// Useful code, but too much synthesis time
-/*
 genvar i;
 generate
 	for(i=0; i<32; i=i+1) begin
@@ -230,7 +321,6 @@ generate
 								;
 	end
 endgenerate
-*/
 
 // Logic
 wire inst_AND = inst_i[31:26] == 6'b000000 && inst_i[10:6] == 5'b00000
@@ -248,8 +338,8 @@ wire inst_LUI = inst_i[31:26] == 6'b001111 && inst_i[25:21] == 5'b00000;
 wire logic_op = inst_AND | inst_ANDI | inst_OR | inst_ORI | inst_XOR
 						| inst_XORI | inst_NOR;
 wire [31:0] logic_a, logic_b, logic_result;
-assign logic_a = op0;
-assign logic_b = imm_op ? {{16{inst_i[15]}},inst_i[15:0]} : op1;
+assign logic_a = op0_i;
+assign logic_b = imm_op ? {16'b0,inst_i[15:0]} : op1_i;
 assign logic_result = (logic_a & logic_b) & {32{inst_AND | inst_ANDI}}
 							|(logic_a | logic_b) & {32{inst_OR | inst_ORI}}
 							|(logic_a ^ logic_b) & {32{inst_XOR | inst_XORI}}

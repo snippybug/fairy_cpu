@@ -117,9 +117,11 @@ wire wb_exception;
 wire [31:0] decode_branch_target;
 wire decode_branch_valid;
 wire fetch_stall;
-
+wire wb_eret;
+wire [31:0] wb_epc;
 wire [31:0] fetch_inst;
 wire [31:0] fetch_pc;
+wire fetch_unaligned_addr;
 fairy_fetch_stage fetch_stage(
 	.clk(aclk),
 	.reset_n(areset_n),
@@ -128,22 +130,36 @@ fairy_fetch_stage fetch_stage(
 	.inst_sram_addr_o(inst_sram_addr),
 	
 	.exception_i(wb_exception),
+	.stall_i(fetch_stall),
+	.eret_i(wb_eret),
+	.epc_i(wb_epc),
+	
 	.branch_target_i(decode_branch_target),
 	.branch_valid_i(decode_branch_valid),
-	.stall_i(fetch_stall),
 	
 	.inst_o(fetch_inst),
-	.pc_o(fetch_pc)
+	.pc_o(fetch_pc),
+	.unaligned_addr_o(fetch_unaligned_addr)
 );
 	
-wire [31:0] decode_op0;
-wire [31:0] decode_op1;
+wire [31:0] decode_op0, decode_op1;
 wire [31:0] decode_inst;
 wire [31:0] decode_pc;
 wire wb_reg_we;
 wire [31:0] wb_reg_wdata;
 wire [4:0] wb_reg_waddr;
-wire [31:0] wb_epc;
+wire [4:0] decode_reg_waddr;
+wire [4:0] exe_reg_waddr;
+wire [4:0] mem_reg_waddr;
+wire decode_reg_we;
+wire decode_delayslot;
+wire wb_hilo_we, wb_hilo_sel;
+wire exe_hilo_we, exe_hilo_sel;
+wire mem_hilo_we, mem_hilo_sel;
+wire decode_hilo_we, decode_hilo_sel;
+wire decode_unaligned_addr;
+wire decode_illegal_inst;
+wire [31:0] debug_decode_delayslot_mark;
 fairy_decode_stage decode_stage(
 	.clk(aclk),
 	.reset_n(areset_n),
@@ -153,20 +169,39 @@ fairy_decode_stage decode_stage(
 	.reg_waddr_i(wb_reg_waddr),
 	.reg_wdata_i(wb_reg_wdata),
 	
+	.illegal_inst_o(decode_illegal_inst),
+	
 	.exception_i(wb_exception),
 	.branch_target_o(decode_branch_target),
 	.branch_valid_o(decode_branch_valid),
 	.pc_i(fetch_pc),
 	.pc_o(decode_pc),
-	.epc_i(wb_epc),
+	.eret_i(wb_eret),
+	.unaligned_addr_i(fetch_unaligned_addr),
+	.unaligned_addr_o(decode_unaligned_addr),
+	
+	.hilo_we_i(wb_hilo_we),
+	.hilo_sel_i(wb_hilo_sel),
+	.hilo_we_o(decode_hilo_we),
+	.hilo_sel_o(decode_hilo_sel),
 	
 	.op0_o(decode_op0),
 	.op1_o(decode_op1),
 	.inst_o(decode_inst),
 	.stall_o(fetch_stall),
 	
-	.debug_reg_raddr0(regfile_11),
-	.debug_reg_raddr1(regfile_12),
+	.conflict_addr0_i(exe_reg_waddr),
+	.conflict_addr1_i(mem_reg_waddr),
+	.conflict_hilo0_i({exe_hilo_we, exe_hilo_sel}),
+	.conflict_hilo1_i({mem_hilo_we, mem_hilo_sel}),
+	
+	.reg_waddr_o(decode_reg_waddr),
+	.reg_we_o(decode_reg_we),
+	.delayslot_o(decode_delayslot),
+	
+	.debug_delayslot_mark(debug_decode_delayslot_mark),
+	//.debug_hi(regfile_15),
+	//.debug_lo(regfile_16),
 	
 	.regfile_00(regfile_00),
 	.regfile_01(regfile_01),
@@ -178,14 +213,16 @@ fairy_decode_stage decode_stage(
 	.regfile_07(regfile_07),
 	.regfile_08(regfile_08),
 	.regfile_09(regfile_09),
-	.regfile_10(regfile_10)
-	/*
+	.regfile_10(regfile_10),
+	
 	.regfile_11(regfile_11),
 	.regfile_12(regfile_12),
 	.regfile_13(regfile_13),
 	.regfile_14(regfile_14),
+	
 	.regfile_15(regfile_15),
 	.regfile_16(regfile_16),
+	
 	.regfile_17(regfile_17),
 	.regfile_18(regfile_18),
 	.regfile_19(regfile_19),
@@ -200,8 +237,9 @@ fairy_decode_stage decode_stage(
 	.regfile_28(regfile_28),
 	.regfile_29(regfile_29),
 	.regfile_30(regfile_30),
+	
 	.regfile_31(regfile_31)
-	*/
+	
 );
 
 wire [31:0] exe_data;
@@ -209,6 +247,11 @@ wire [31:0] exe_inst;
 wire [31:0] exe_pc;
 wire [31:0] exe_op1;
 wire exe_overflow;
+wire exe_reg_we;
+wire exe_delayslot;
+wire exe_unaligned_addr;
+wire exe_illegal_inst;
+wire [31:0] debug_exe_adder_sum;
 fairy_exe_stage exe_stage(
 	.clk(aclk),
 	.reset_n(areset_n),
@@ -218,16 +261,33 @@ fairy_exe_stage exe_stage(
 	.inst_i(decode_inst),
 	.pc_i(decode_pc),
 	.exception_i(wb_exception),
+	.delayslot_i(decode_delayslot),
+	.eret_i(wb_eret),
 	
-	.debug_adder_a(regfile_21),
-	.debug_adder_b(regfile_23),
-	.debug_shift_emptybit(regfile_30),
+	.unaligned_addr_i(decode_unaligned_addr),
+	.unaligned_addr_o(exe_unaligned_addr),
+	.illegal_inst_i(decode_illegal_inst),
+	.illegal_inst_o(exe_illegal_inst),
+	
+	//.debug_adder_b(regfile_23),
+	.debug_adder_sum(debug_exe_adder_sum),
+	
+	.hilo_we_i(decode_hilo_we),
+	.hilo_sel_i(decode_hilo_sel),
+	.hilo_we_o(exe_hilo_we),
+	.hilo_sel_o(exe_hilo_sel),
+	
+	.reg_waddr_i(decode_reg_waddr),
+	.reg_we_i(decode_reg_we),
+	.reg_waddr_o(exe_reg_waddr),
+	.reg_we_o(exe_reg_we),
 	
 	.pc_o(exe_pc),
 	.data_o(exe_data),
 	.inst_o(exe_inst),
 	.overflow_o(exe_overflow),
-	.op1_o(exe_op1)
+	.op1_o(exe_op1),
+	.delayslot_o(exe_delayslot)
 );
 
 wire [31:0] mem_inst;
@@ -235,6 +295,9 @@ wire [31:0] mem_data;
 wire [31:0] mem_pc;
 wire mem_overflow;
 wire mem_unaligned_addr;
+wire mem_reg_we;
+wire mem_delayslot;
+wire mem_illegal_inst;
 fairy_mem_stage mem_stage(
 	.clk(aclk),
 	.reset_n(areset_n),
@@ -245,7 +308,22 @@ fairy_mem_stage mem_stage(
 	.op1_i(exe_op1),
 	.overflow_i(exe_overflow),
 	.exception_i(wb_exception),
+	.delayslot_i(exe_delayslot),
 	.unaligned_addr_o(mem_unaligned_addr),
+	.eret_i(wb_eret),
+	.unaligned_addr_i(exe_unaligned_addr),
+	
+	.hilo_we_i(exe_hilo_we),
+	.hilo_sel_i(exe_hilo_sel),
+	.hilo_we_o(mem_hilo_we),
+	.hilo_sel_o(mem_hilo_sel),
+	.illegal_inst_i(exe_illegal_inst),
+	.illegal_inst_o(mem_illegal_inst),
+	
+	.reg_waddr_i(exe_reg_waddr),
+	.reg_we_i(exe_reg_we),
+	.reg_waddr_o(mem_reg_waddr),
+	.reg_we_o(mem_reg_we),
 	
 	.data_sram_cen_o(data_sram_cen),
 	.data_sram_wdata_o(data_sram_wdata),
@@ -256,11 +334,18 @@ fairy_mem_stage mem_stage(
 	.inst_o(mem_inst),
 	.data_o(mem_data),
 	.pc_o(mem_pc),
-	.overflow_o(mem_overflow)
+	.overflow_o(mem_overflow),
+	.delayslot_o(mem_delayslot)
+	
+	//.debug_mem_rdata(regfile_12),
+	//.debug_data(regfile_16)
 );
 
+wire [31:0] debug_wb_mfc0_data;
+wire [31:0] debug_wb_cp0_cause_value;
 fairy_writeback_stage wb_stage(
 	.clk(aclk),
+	.reset_n(areset_n),
 	
 	.data_i(mem_data),
 	.inst_i(mem_inst),
@@ -268,34 +353,43 @@ fairy_writeback_stage wb_stage(
 	.overflow_i(mem_overflow),
 	.unaligned_addr_i(mem_unaligned_addr),
 	
+	.reg_waddr_i(mem_reg_waddr),
+	.reg_we_i(mem_reg_we),
+	.delayslot_i(mem_delayslot),
+	
+	.hilo_we_i(mem_hilo_we),
+	.hilo_sel_i(mem_hilo_sel),
+	.hilo_we_o(wb_hilo_we),
+	.hilo_sel_o(wb_hilo_sel),
+	.illegal_inst_i(mem_illegal_inst),
+	
+	.debug_mfc0_data(debug_wb_mfc0_data),
+	.debug_cp0_cause_value(debug_wb_cp0_cause_value),
+	
 	.reg_we_o(wb_reg_we),
 	.reg_wdata_o(wb_reg_wdata),
 	.reg_waddr_o(wb_reg_waddr),
 	.exception_o(wb_exception),
-	.epc_o(wb_epc)
-	
+	.epc_o(wb_epc),
+	.eret_o(wb_eret)
 );
 
-// debug
-// 11 = decode_reg_raddr0
-// 12 = decode_reg_raddr1
-assign regfile_13 = wb_epc;
-assign regfile_14 = data_sram_rdata;
-assign regfile_15 = data_sram_addr;
-assign regfile_16 = {27'b0, wb_reg_waddr};
+assign ex_pc = mem_pc;
+assign rs_valid = |ex_pc;
+/*
 assign regfile_17 = mem_inst;
 assign regfile_18 = exe_inst;
 assign regfile_19 = decode_inst;
 assign regfile_20 = fetch_inst;
-// 21 = exe_adder_a
-assign regfile_22 = {32{exe_overflow}};
-// 23 = exe_adder_b
-assign regfile_24 = wb_reg_waddr;
-assign regfile_25 = wb_reg_wdata;
-assign regfile_26 = mem_data;
-assign regfile_27 = exe_data;
-assign regfile_28 = decode_op0;
-assign regfile_29 = decode_op1;
-// 30 = exe_shift_emptybit
-
+assign regfile_21 = mem_data;
+assign regfile_22 = exe_data;
+assign regfile_23 = decode_op0;
+assign regfile_24 = decode_op1;
+assign regfile_25 = data_sram_addr;
+assign regfile_26 = data_sram_wdata;
+assign regfile_27 = {32{data_sram_wr}};
+assign regfile_28 = {32{mem_unaligned_addr}};
+assign regfile_29 = mem_pc;
+assign regfile_30 = {32{exe_unaligned_addr}};
+*/
 endmodule // fairytop
