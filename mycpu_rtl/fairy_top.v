@@ -153,13 +153,15 @@ wire [4:0] exe_reg_waddr;
 wire [4:0] mem_reg_waddr;
 wire decode_reg_we;
 wire decode_delayslot;
-wire wb_hilo_we, wb_hilo_sel;
-wire exe_hilo_we, exe_hilo_sel;
-wire mem_hilo_we, mem_hilo_sel;
-wire decode_hilo_we, decode_hilo_sel;
+wire [1:0] wb_hilo_we;
+wire [1:0] exe_hilo_we;
+wire [1:0] mem_hilo_we;
+wire [1:0] decode_hilo_we;
 wire decode_unaligned_addr;
 wire decode_illegal_inst;
 wire [31:0] debug_decode_delayslot_mark;
+wire [31:0] debug_decode_hi;
+wire [31:0] debug_decode_lo;
 fairy_decode_stage decode_stage(
 	.clk(aclk),
 	.reset_n(areset_n),
@@ -181,9 +183,7 @@ fairy_decode_stage decode_stage(
 	.unaligned_addr_o(decode_unaligned_addr),
 	
 	.hilo_we_i(wb_hilo_we),
-	.hilo_sel_i(wb_hilo_sel),
 	.hilo_we_o(decode_hilo_we),
-	.hilo_sel_o(decode_hilo_sel),
 	
 	.op0_o(decode_op0),
 	.op1_o(decode_op1),
@@ -192,16 +192,16 @@ fairy_decode_stage decode_stage(
 	
 	.conflict_addr0_i(exe_reg_waddr),
 	.conflict_addr1_i(mem_reg_waddr),
-	.conflict_hilo0_i({exe_hilo_we, exe_hilo_sel}),
-	.conflict_hilo1_i({mem_hilo_we, mem_hilo_sel}),
+	.conflict_hilo0_i(exe_hilo_we),
+	.conflict_hilo1_i(mem_hilo_we),
 	
 	.reg_waddr_o(decode_reg_waddr),
 	.reg_we_o(decode_reg_we),
 	.delayslot_o(decode_delayslot),
 	
 	.debug_delayslot_mark(debug_decode_delayslot_mark),
-	//.debug_hi(regfile_15),
-	//.debug_lo(regfile_16),
+	.debug_hi(debug_decode_hi),
+	.debug_lo(debug_decode_lo),
 	
 	.regfile_00(regfile_00),
 	.regfile_01(regfile_01),
@@ -273,9 +273,7 @@ fairy_exe_stage exe_stage(
 	.debug_adder_sum(debug_exe_adder_sum),
 	
 	.hilo_we_i(decode_hilo_we),
-	.hilo_sel_i(decode_hilo_sel),
 	.hilo_we_o(exe_hilo_we),
-	.hilo_sel_o(exe_hilo_sel),
 	
 	.reg_waddr_i(decode_reg_waddr),
 	.reg_we_i(decode_reg_we),
@@ -314,9 +312,7 @@ fairy_mem_stage mem_stage(
 	.unaligned_addr_i(exe_unaligned_addr),
 	
 	.hilo_we_i(exe_hilo_we),
-	.hilo_sel_i(exe_hilo_sel),
 	.hilo_we_o(mem_hilo_we),
-	.hilo_sel_o(mem_hilo_sel),
 	.illegal_inst_i(exe_illegal_inst),
 	.illegal_inst_o(mem_illegal_inst),
 	
@@ -358,9 +354,7 @@ fairy_writeback_stage wb_stage(
 	.delayslot_i(mem_delayslot),
 	
 	.hilo_we_i(mem_hilo_we),
-	.hilo_sel_i(mem_hilo_sel),
 	.hilo_we_o(wb_hilo_we),
-	.hilo_sel_o(wb_hilo_sel),
 	.illegal_inst_i(mem_illegal_inst),
 	
 	.debug_mfc0_data(debug_wb_mfc0_data),
@@ -385,11 +379,11 @@ assign regfile_21 = mem_data;
 assign regfile_22 = exe_data;
 assign regfile_23 = decode_op0;
 assign regfile_24 = decode_op1;
-assign regfile_25 = data_sram_addr;
-assign regfile_26 = data_sram_wdata;
-assign regfile_27 = {32{data_sram_wr}};
-assign regfile_28 = {32{mem_unaligned_addr}};
-assign regfile_29 = mem_pc;
-assign regfile_30 = {32{exe_unaligned_addr}};
+assign regfile_25 = debug_decode_hi;
+assign regfile_26 = debug_decode_lo;
+assign regfile_27 = {30'b0, decode_hilo_we};
+assign regfile_28 = {30'b0, exe_hilo_we};
+assign regfile_29 = {30'b0, mem_hilo_we};
+assign regfile_30 = mem_pc;
 */
 endmodule // fairytop

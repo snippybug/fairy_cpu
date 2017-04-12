@@ -22,26 +22,16 @@ module fairy_exe_stage(
    input clk,
    input reset_n,
 	
-   input [31:0] op0_i,
-   input [31:0] op1_i,
-	input [31:0] inst_i,
-	input [31:0] pc_i,
-	input exception_i,
-	input [4:0] reg_waddr_i,
-	input reg_we_i,
-	input delayslot_i,
+	// compution
+	input [31:0] op0_i,
+	output [31:0] data_o,
+	
+	// exception
 	input eret_i,
+	input exception_i,
+	output overflow_o,
 	
-	input hilo_we_i,
-	input hilo_sel_i,
-	output hilo_we_o,
-	output hilo_sel_o,
-	
-	input unaligned_addr_i,
-	output unaligned_addr_o,
-	input illegal_inst_i,
-	output illegal_inst_o,
-	
+	// debug
 	output [31:0] debug_adder_a,
 	output [31:0] debug_adder_b,
 	output [31:0] debug_imm_op,
@@ -49,13 +39,24 @@ module fairy_exe_stage(
 	output [31:0] debug_shift_emptybit,
 	output [31:0] debug_adder_sum,
 	
-	output [31:0] data_o,
-	output [31:0] op1_o,
-	output [31:0] inst_o,
+	// pipeline
+	input [1:0] hilo_we_i,
+	output [1:0] hilo_we_o,
+	input unaligned_addr_i,
+	output unaligned_addr_o,
+	input illegal_inst_i,
+	output illegal_inst_o,
+	input [31:0] pc_i,
 	output [31:0] pc_o,
-	output overflow_o,
+	input [31:0] op1_i,
+	output [31:0] op1_o,
+	input [31:0] inst_i,
+	output [31:0] inst_o,
+	input [4:0] reg_waddr_i,
 	output [4:0] reg_waddr_o,
+	input reg_we_i,
 	output reg_we_o,
+	input delayslot_i,
 	output delayslot_o
 );
 
@@ -71,7 +72,6 @@ assign reg_waddr_o = reg_waddr;
 assign reg_we_o = reg_we;
 assign delayslot_o = delayslot;
 assign hilo_we_o = hilo_we;
-assign hilo_sel_o = hilo_sel;
 assign unaligned_addr_o = unaligned_addr;
 assign illegal_inst_o = illegal_inst;
 assign debug_adder_a = adder_a;
@@ -89,9 +89,9 @@ reg overflow;
 reg [31:0] pc;
 reg [31:0] op1;
 reg [4:0] reg_waddr;
-reg reg_we;
+reg [1:0] reg_we;
 reg delayslot;
-reg hilo_we, hilo_sel;
+reg [1:0] hilo_we;
 reg unaligned_addr;
 reg illegal_inst;
 
@@ -114,17 +114,13 @@ begin
 		unaligned_addr <= unaligned_addr_i;
 end
 
-// hilo_we && hilo_sel
+// hilo_we
 always @(posedge clk)
 begin
-	if(reset) begin
+	if(reset)
 		hilo_we <= 0;
-		hilo_sel <= 0;
-	end
-	else begin
+	else
 		hilo_we <= hilo_we_i;
-		hilo_sel <= hilo_sel_i;
-	end
 end
 
 // delayslot
@@ -355,9 +351,17 @@ wire inst_LW = inst_i[31:26] == 6'b100011;
 wire inst_SB = inst_i[31:26] == 6'b101000;
 wire inst_SH = inst_i[31:26] == 6'b101001;
 wire inst_SW = inst_i[31:26] == 6'b101011;
+wire inst_LWL = inst_i[31:26] == 6'b100010;
+wire inst_LWR = inst_i[31:26] == 6'b100110;
+wire inst_SWL = inst_i[31:26] == 6'b101010;
+wire inst_SWR = inst_i[31:26] == 6'b101110;
 wire mem_op = mem_load_op | mem_store_op;
-wire mem_load_op = inst_LB | inst_LBU | inst_LH | inst_LHU | inst_LW;
-wire mem_store_op = inst_SB | inst_SH | inst_SW;
+wire mem_load_op = inst_LB | inst_LBU | inst_LH | inst_LHU | inst_LW |
+					inst_LWL | inst_LWR
+					;
+wire mem_store_op = inst_SB | inst_SH | inst_SW |
+					inst_SWL | inst_SWR
+					;
 
 // Link
 wire inst_BGEZAL = inst_i[31:26] == 6'b000001 && inst_i[20:16] == 5'b10001;
@@ -371,4 +375,6 @@ wire link_op = inst_BGEZAL | inst_BLTZAL | inst_JAL | inst_JALR;
 wire inst_MTC0 = inst_i[31:21] == 11'b01000000100 &&
 						inst_i[10:3] == 8'b00000000;
 
-endmodule
+endmodule // fairy_exe_stage
+
+

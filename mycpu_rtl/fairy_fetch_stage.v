@@ -23,31 +23,29 @@ module fairy_fetch_stage(
    input reset_n,
 	
 	input   [31:0]  inst_sram_rdata_i,
-	output  [31:0]  inst_sram_addr_o,
+	output  [31:0]  inst_sram_addr_o,	
+	output [31:0] inst_o,
+	output [31:0] pc_o,
+	output unaligned_addr_o,
 	
 	input exception_i,
 	input eret_i,
-	input [31:0] epc_i,
-	
+	input [31:0] epc_i,	
 	input [31:0] branch_target_i,
 	input branch_valid_i,
-	input stall_i,
-	
-	output [31:0] inst_o,
-	output [31:0] pc_o,
-	output unaligned_addr_o
+	input stall_i
 );
 
 // Input
-wire [31:0] branch_target = branch_target_i;
-wire branch_valid = branch_valid_i;
-wire exception = exception_i;
-wire [31:0] inst_sram_rdata = inst_sram_rdata_i;
+
 // Output
-assign inst_o = bubble ? 0 : inst_sram_rdata;
+assign inst_o = bubble ? 0 : inst_sram_rdata_i;
 assign inst_sram_addr_o = stall_i ? oldpc : pc;
 assign pc_o = oldpc;
 assign unaligned_addr_o = unaligned_addr;
+
+// Intermediate
+wire clear = exception_i | eret_i | ~reset_n;
 
 reg [31:0] pc;	// program counter
 reg bubble;
@@ -57,19 +55,16 @@ reg unaligned_addr;
 // unaligned_addr
 always @(posedge clk)
 begin
-	if(reset_n == 0 || eret_i || exception_i)
+	if(clear)
 		unaligned_addr <= 0;
-	else if(stall_i)
-		unaligned_addr <= unaligned_addr;
-	else
+	else if(stall_i == 0)
 		unaligned_addr <= (|inst_sram_addr_o[1:0]);
 end
-
 
 // oldpc
 always @(posedge clk)
 begin
-	if(exception | eret_i)
+	if(clear)
 		oldpc <= 0;
 	else if(stall_i == 0)
 		oldpc <= pc;
@@ -80,23 +75,21 @@ always @(posedge clk)
 begin
 	if(reset_n == 0)
 		pc <= 32'hbfc00000;
-	else if(exception | eret_i)
-		pc <= {32{exception}} & 32'hbfc00380
+	else if(exception_i || eret_i)
+		pc <= {32{exception_i}} & 32'hbfc00380
 			| {32{eret_i}} & epc_i
 			;
-	else if(stall_i)
-		pc <= pc;
-	else
-		pc <= branch_valid ? branch_target : (pc+4);
+	else if(stall_i == 0)
+		pc <= branch_valid_i ? branch_target_i : (pc+4);
 end
 
 // bubble
 always @(posedge clk)
 begin
-	if(reset_n == 0 || exception || eret_i)
+	if(clear)
 		bubble <= 1;
 	else
 		bubble <= 0;
 end
 
-endmodule
+endmodule // fairy_fetch_stage

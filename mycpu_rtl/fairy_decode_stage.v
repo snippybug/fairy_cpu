@@ -22,39 +22,45 @@ module fairy_decode_stage(
    input clk,
 	input reset_n,
 	
-	input [31:0] inst_i,
-	input	reg_we_i,
+	// register
 	input [4:0] reg_waddr_i,
 	input [31:0] reg_wdata_i,
-	input [31:0] pc_i,
-	input exception_i,
-	input eret_i,
-	
-	output [31:0] op0_o,
-	output [31:0] op1_o,
-	output [31:0] inst_o,
-	output [31:0] pc_o,
-	output [31:0] branch_target_o,
-	output branch_valid_o,
+	input	reg_we_i,
+	input [1:0] hilo_we_i,
 	output [4:0] reg_waddr_o,
 	output reg_we_o,
+	output [1:0] hilo_we_o,
 	
+	// conflict detection
 	input [4:0] conflict_addr0_i,
-	input [4:0] conflict_addr1_i,	
+	input [4:0] conflict_addr1_i,
 	input [1:0] conflict_hilo0_i,
 	input [1:0] conflict_hilo1_i,
 	output stall_o,
-	output delayslot_o,
 	
-	input hilo_we_i,
-	input hilo_sel_i,
-	output hilo_we_o,
-	output hilo_sel_o,
-	
-	input unaligned_addr_i,
-	output unaligned_addr_o,
+	// exception
+	input exception_i,
+	input eret_i,
 	output illegal_inst_o,
 	
+	// branch
+	output branch_valid_o,
+	output [31:0] branch_target_o,
+	output delayslot_o,
+	
+	// operands
+	output [31:0] op0_o,
+	output [31:0] op1_o,
+	
+	// pipeline
+	input [31:0] pc_i,
+	output [31:0] pc_o,
+	input [31:0] inst_i,	
+	output [31:0] inst_o,
+	input unaligned_addr_i,
+	output unaligned_addr_o,
+	
+	// debug
 	output [31:0] debug_reg_raddr0,
 	output [31:0] debug_reg_raddr1,
 	output [31:0] debug_imm_op,
@@ -98,8 +104,7 @@ module fairy_decode_stage(
 );
 
 // Input
-wire [4:0] conflict_addr0 = conflict_addr0_i;
-wire [4:0] conflict_addr1 = conflict_addr1_i;
+
 // Output
 assign inst_o = inst;
 assign op0_o = op0;
@@ -112,7 +117,6 @@ assign reg_we_o = reg_we;
 assign stall_o = stall;
 assign delayslot_o = delayslot;
 assign hilo_we_o = hilo_we;
-assign hilo_sel_o = hilo_sel;
 assign unaligned_addr_o = unaligned_addr;
 assign illegal_inst_o = illegal_inst;
 assign debug_reg_raddr0 = reg_raddr0;
@@ -123,7 +127,7 @@ assign debug_lo = lo;
 assign debug_hi = hi;
 assign debug_delayslot_mark = {32{delayslot_mark}};
 
-wire reset = ~reset_n | exception_i | eret_i;
+wire clear = ~reset_n | exception_i | eret_i;
 
 // data dependence
 wire inst_op_rs = inst_ADDIU | inst_ADDI | inst_SLTI | inst_SLTIU
@@ -134,28 +138,32 @@ wire inst_op_rs = inst_ADDIU | inst_ADDI | inst_SLTI | inst_SLTIU
 					| inst_BGEZAL | inst_BLTZAL | inst_JALR
 					| inst_MTLO | inst_MTHI
 					;
-wire inst_MTC0 = inst_i[31:21] == 11'b01000000100 &&
-						inst_i[10:3] == 8'b00000000;
 wire inst_op_rt = inst_SLL | inst_SRL | inst_SRA | inst_MTC0;
 wire inst_op_rs_rt = inst_ADDU | inst_SUBU | inst_ADD | inst_SUB
 						| inst_SLT | inst_SLTU | inst_SLLV | inst_SRLV | inst_SRAV
 						| inst_AND | inst_OR | inst_XOR | inst_NOR
 						| inst_SB | inst_SH | inst_SW
 						| inst_BEQ | inst_BNE
+						| inst_LWL | inst_LWR
+						| inst_SWL | inst_SWR
 						;
 wire stall = (inst_op_rs | inst_op_rs_rt) & (inst_i[25:21] == reg_waddr) & (|reg_waddr)
-				| (inst_op_rs | inst_op_rs_rt) & (inst_i[25:21] == conflict_addr0) & (|conflict_addr0)
-				| (inst_op_rs | inst_op_rs_rt) & (inst_i[25:21] == conflict_addr1) & (|conflict_addr1)
+				| (inst_op_rs | inst_op_rs_rt) & (inst_i[25:21] == conflict_addr0_i) & (|conflict_addr0_i)
+				| (inst_op_rs | inst_op_rs_rt) & (inst_i[25:21] == conflict_addr1_i) & (|conflict_addr1_i)
 				| (inst_op_rt | inst_op_rs_rt) & (inst_i[20:16] == reg_waddr) & (|reg_waddr)
-				| (inst_op_rt | inst_op_rs_rt) & (inst_i[20:16] == conflict_addr0) & (|conflict_addr0)
-				| (inst_op_rt | inst_op_rs_rt) & (inst_i[20:16] == conflict_addr1) & (|conflict_addr1)
-				| inst_MFHI & (conflict_hilo0_i[1] & conflict_hilo0_i[0])	
-				| inst_MFHI & (conflict_hilo1_i[1] & conflict_hilo1_i[0])
-				| inst_MFHI & (hilo_we & hilo_sel)
-				| inst_MFLO & (conflict_hilo0_i[1] & ~conflict_hilo0_i[0])
-				| inst_MFLO & (conflict_hilo1_i[1] & ~conflict_hilo1_i[0])
-				| inst_MFLO & (hilo_we & ~hilo_sel)
+				| (inst_op_rt | inst_op_rs_rt) & (inst_i[20:16] == conflict_addr0_i) & (|conflict_addr0_i)
+				| (inst_op_rt | inst_op_rs_rt) & (inst_i[20:16] == conflict_addr1_i) & (|conflict_addr1_i)
+				| inst_MFHI & conflict_hilo0_i[1]
+				| inst_MFHI & conflict_hilo1_i[1]
+				| inst_MFHI & hilo_we[1]
+				| inst_MFLO & conflict_hilo0_i[0]
+				| inst_MFLO & conflict_hilo1_i[0]
+				| inst_MFLO & hilo_we[0]
 				;
+
+// mtc0
+wire inst_MTC0 = inst_i[31:21] == 11'b01000000100 &&
+						inst_i[10:3] == 8'b00000000;
 
 // add, sub, slt
 wire inst_ADDU = inst_i[31:26] == 6'b000000 && inst_i[10:6] == 5'b00000
@@ -187,9 +195,17 @@ wire inst_LW = inst_i[31:26] == 6'b100011;
 wire inst_SB = inst_i[31:26] == 6'b101000;
 wire inst_SH = inst_i[31:26] == 6'b101001;
 wire inst_SW = inst_i[31:26] == 6'b101011;
+wire inst_LWL = inst_i[31:26] == 6'b100010;
+wire inst_LWR = inst_i[31:26] == 6'b100110;
+wire inst_SWL = inst_i[31:26] == 6'b101010;
+wire inst_SWR = inst_i[31:26] == 6'b101110;
 wire mem_op = mem_load_op | mem_store_op;
-wire mem_load_op = inst_LB | inst_LBU | inst_LH | inst_LHU | inst_LW;
-wire mem_store_op = inst_SB | inst_SH | inst_SW;
+wire mem_load_op = inst_LB | inst_LBU | inst_LH | inst_LHU | inst_LW |
+						inst_LWL | inst_LWR
+						;
+wire mem_store_op = inst_SB | inst_SH | inst_SW |
+						inst_SWL | inst_SWR
+						;
 
 // Branch
 wire inst_BEQ = inst_i[31:26] == 6'b000100;
@@ -240,12 +256,6 @@ wire inst_MTHI = inst_i[31:26] == 6'b0 && inst_i[20:6] == 15'b0
 					&& inst_i[5:0] == 6'b010001;
 wire hilo_op = inst_MFLO | inst_MFHI | inst_MTLO | inst_MTHI;
 
-// exception
-wire inst_BREAK = inst_i[31:26] == 6'b000000 && inst_i[5:0] == 6'b001101;
-wire inst_SYSCALL = inst_i[31:26] == 6'b000000 && inst_i[5:0] == 6'b001100;
-wire exception_op = inst_BREAK | inst_SYSCALL;
-wire inst_ERET = inst_i[31:0] == 32'h42000018;
-
 // shift
 wire inst_SLL = inst_i[31:26] == 6'b000000 && inst_i[25:21] == 5'b00000
 						&& inst_i[5:0] == 6'b000000;
@@ -277,6 +287,10 @@ wire logic_op = inst_AND | inst_ANDI | inst_OR | inst_ORI | inst_XOR
 						| inst_XORI | inst_NOR;
 wire inst_LUI = inst_i[31:26] == 6'b001111 && inst_i[25:21] == 5'b00000;
 
+// multiply
+wire inst_MULT = inst_i[31:26] == 6'b000000 && inst_i[15:6] == 10'b0000000000
+					|| inst_i[5:0] == 6'b011000;
+
 // Register
 wire [4:0] reg_raddr0, reg_raddr1;
 wire [31:0] reg_rdata0, reg_rdata1;
@@ -292,15 +306,14 @@ reg [31:0] hi;
 reg [31:0] lo;
 reg delayslot_mark;
 reg delayslot;
-reg hilo_we;
-reg hilo_sel;
+reg [1:0] hilo_we;
 reg unaligned_addr;
 reg illegal_inst;
 
 // illegal_inst
 always @(posedge clk)
 begin
-	if(reset | stall)
+	if(clear | stall)
 		illegal_inst <= 0;
 	else
 		illegal_inst <= ~(
@@ -308,15 +321,14 @@ begin
 					mem_op | branch_op | jump_op |
 					hilo_op |
 					inst_MTC0 | inst_MFC0 |
-					shift_op | logic_op | inst_LUI |
-					exception_op | inst_ERET
+					shift_op | logic_op | inst_LUI
 					);
 end
 
 // unaligned_addr
 always @(posedge clk)
 begin
-	if(reset | stall)
+	if(clear | stall)
 		unaligned_addr <= 0;
 	else
 		unaligned_addr <= unaligned_addr_i;
@@ -325,25 +337,16 @@ end
 // hilo_we
 always @(posedge clk)
 begin
-	if(reset | stall)
+	if(clear | stall)
 		hilo_we <= 0;
 	else
-		hilo_we <= inst_MTHI | inst_MTLO;
-end
-
-// hilo_sel
-always @(posedge clk)
-begin
-	if(reset | stall)
-		hilo_sel <= 0;
-	else
-		hilo_sel <= inst_MTHI;
+		hilo_we <= {inst_MTHI, inst_MTLO};
 end
 
 // delayslot
 always @(posedge clk)
 begin
-	if(reset | stall)
+	if(clear | stall)
 		delayslot <= 0;
 	else 
 		delayslot <= delayslot_mark;
@@ -352,7 +355,7 @@ end
 // delayslot_mark
 always @(posedge clk)
 begin
-	if(reset)
+	if(clear)
 		delayslot_mark <= 0;
 	else if(stall)
 		delayslot_mark <= delayslot_mark;
@@ -365,7 +368,7 @@ always @(posedge clk)
 begin
 	if(reset_n == 0)
 		hi <= 32'b0;
-	else if(hilo_we_i == 1 && hilo_sel_i == 1)
+	else if(hilo_we_i[1])
 		hi <= reg_wdata_i;
 end
 
@@ -374,14 +377,14 @@ always @(posedge clk)
 begin
 	if(reset_n == 0)
 		lo <= 32'b0;
-	else if(hilo_we_i == 1 && hilo_sel_i == 0)
+	else if(hilo_we_i[0])
 		lo <= reg_wdata_i;
 end
 
 // reg_we
 always @(posedge clk)
 begin
-	if(reset | stall)
+	if(clear | stall)
 		reg_we <= 0;
 	else
 		reg_we <= (|inst_i) & 
@@ -406,7 +409,7 @@ wire rt_op = imm_op | inst_MFC0;
 // reg_waddr
 always @(posedge clk)
 begin
-	if(reset | stall)
+	if(clear | stall)
 		reg_waddr <= 32'b0;
 	else
 		reg_waddr <= rt_op ? inst_i[20:16] :
@@ -416,7 +419,7 @@ end
 // inst
 always @(posedge clk)
 begin
-	if(reset | stall)
+	if(clear | stall)
 		inst <= 32'b0;
 	else
 		inst <= inst_i;
@@ -425,7 +428,7 @@ end
 // op0
 always @(posedge clk)
 begin
-	if(reset | stall)
+	if(clear | stall)
 		op0 <= 32'b0;
 	else
 		op0 <= reg_rdata0;
@@ -434,7 +437,7 @@ end
 // op1
 always @(posedge clk)
 begin
-	if(reset | stall)
+	if(clear | stall)
 		op1 <= 32'b0;
 	else
 		op1 <= {32{inst_MFLO}} & lo
@@ -446,7 +449,7 @@ end
 // pc
 always @(posedge clk)
 begin
-	if(reset | stall)
+	if(clear | stall)
 		pc <= 32'b0;
 	else
 		pc <= pc_i;
@@ -501,7 +504,7 @@ rf2r1w u0_rf(
 	.regfile_31(regfile_31)
 );
 
-endmodule
+endmodule // fairy_decode_stage
 
 module rf2r1w(
 	clock,

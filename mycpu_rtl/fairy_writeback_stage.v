@@ -22,30 +22,34 @@ module fairy_writeback_stage(
 	input clk,
 	input reset_n,
 
+	// pipeline
+	input [1:0] hilo_we_i,
+	output [1:0] hilo_we_o,
+
+	// exception
+	input overflow_i,
+	input unaligned_addr_i,
+	input delayslot_i,
+	input illegal_inst_i,
+	output [31:0] epc_o,
+	output exception_o,
+	output eret_o,
+	
+	// info
    input [31:0] data_i,
    input [31:0] inst_i,
 	input [31:0] pc_i,
-	input overflow_i,
-	input unaligned_addr_i,
-	input [4:0] reg_waddr_i,
-	input reg_we_i,
-	input delayslot_i,
-	input illegal_inst_i,
 	
-	input hilo_we_i,
-	input hilo_sel_i,
-	output hilo_we_o,
-	output hilo_sel_o,
-	
+	// debug
 	output [31:0] debug_mfc0_data,
 	output [31:0] debug_cp0_cause_value,
 	
+	// register
 	output reg_we_o,
+	input [4:0] reg_waddr_i,
+	input reg_we_i,
 	output [31:0] reg_wdata_o,
-	output [4:0] reg_waddr_o,
-	output [31:0] epc_o,
-	output exception_o,
-	output eret_o
+	output [4:0] reg_waddr_o
  );
 
 // Input
@@ -61,7 +65,6 @@ assign exception_o = exception;
 assign epc_o = cp0_epc;
 assign eret_o = inst_ERET;
 assign hilo_we_o = hilo_we_i;
-assign hilo_sel_o = hilo_sel_i;
 assign debug_mfc0_data = mfc0_data;
 assign debug_cp0_cause_value = cp0_cause_value;
 
@@ -94,9 +97,12 @@ wire inst_MTC0 = inst_i[31:21] == 11'b01000000100 &&
 wire inst_ERET = inst_i[31:0] == 32'h42000018;
 
 // Exception
+wire illegal_inst = illegal_inst_i & 
+					~inst_ERET & ~inst_BREAK & ~inst_SYSCALL
+					;
 wire exception = overflow | unaligned_addr
 					| inst_BREAK | inst_SYSCALL
-					| illegal_inst_i
+					| illegal_inst
 					;
 // CP0
 reg [31:0] cp0_epc;
@@ -156,7 +162,7 @@ begin
 		cp0_cause_exccode <= 0;
 	else if(overflow || unaligned_addr || inst_BREAK || inst_SYSCALL
 			|| (inst_MTC0 && inst_i[15:11] == 5'd13)
-			|| illegal_inst_i
+			|| illegal_inst
 			)
 		cp0_cause_exccode <= {5{overflow}} & 5'd12
 								| {5{unaligned_addr & mem_load_op}} & 5'd4
@@ -165,7 +171,7 @@ begin
 								| {5{inst_BREAK}} & 5'd9
 								| {5{inst_SYSCALL}} & 5'd8
 								| {5{inst_MTC0 && inst_i[15:11] == 5'd13}} & data[6:2]
-								| {5{illegal_inst_i}} & 5'd10
+								| {5{illegal_inst}} & 5'd10
 								;
 								
 end
@@ -204,4 +210,4 @@ begin
 		cp0_count_step <= ~cp0_count_step;
 end
 
-endmodule
+endmodule // fairy_writeback_stage
