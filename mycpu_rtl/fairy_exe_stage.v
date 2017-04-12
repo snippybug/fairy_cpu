@@ -24,7 +24,7 @@ module fairy_exe_stage(
 	
 	// compution
 	input [31:0] op0_i,
-	output [31:0] data_o,
+	output [63:0] data_o,
 	
 	// exception
 	input eret_i,
@@ -84,7 +84,7 @@ assign debug_adder_sum = adder_sum;
 wire reset = ~reset_n | exception_i | eret_i;
 
 reg [31:0] inst;
-reg [31:0] data;
+reg [63:0] data;
 reg overflow;
 reg [31:0] pc;
 reg [31:0] op1;
@@ -155,7 +155,7 @@ end
 always @(posedge clk)
 begin
 	if(reset)
-		op1 <= 31'b0;
+		op1 <= 0;
 	else
 		op1 <= op1_i;
 end
@@ -179,12 +179,13 @@ begin
 end
 
 // data
-wire [31:0] result = {31'b0, lt} & {32{slt_op}}
-					| adder_sum & {32{add_op | sub_op | mem_op | link_op}}
-					| shift_result & {32{shift_op}}
-					| logic_result & {32{logic_op}}
-					| lui_result & {32{inst_LUI}}
-					| op1_i & {32{inst_MTC0}}
+wire [63:0] result = {63'b0, lt} & {64{slt_op}}
+					| {32'b0, adder_sum} & {64{add_op | sub_op | mem_op | link_op}}
+					| {32'b0, shift_result} & {64{shift_op}}
+					| {32'b0, logic_result} & {64{logic_op}}
+					| {32'b0, lui_result} & {64{inst_LUI}}
+					| {32'b0, op1_i} & {64{inst_MTC0}}
+					| mul_result & {64{inst_MULT}}
 					;
 always @(posedge clk)
 begin
@@ -374,6 +375,17 @@ wire link_op = inst_BGEZAL | inst_BLTZAL | inst_JAL | inst_JALR;
 // mtc0
 wire inst_MTC0 = inst_i[31:21] == 11'b01000000100 &&
 						inst_i[10:3] == 8'b00000000;
+
+// multiply
+wire inst_MULT = inst_i[31:26] == 6'b000000 && inst_i[15:6] == 10'b0000000000
+					|| inst_i[5:0] == 6'b011000;
+
+wire [63:0] mul_result;
+multiplier mul32(
+	.mul_a(op0_i),
+	.mul_b(op1_i),
+	.mul_res(mul_result)
+);
 
 endmodule // fairy_exe_stage
 

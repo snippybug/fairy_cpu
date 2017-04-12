@@ -36,7 +36,7 @@ module fairy_writeback_stage(
 	output eret_o,
 	
 	// info
-   input [31:0] data_i,
+   input [63:0] data_i,
    input [31:0] inst_i,
 	input [31:0] pc_i,
 	
@@ -48,17 +48,16 @@ module fairy_writeback_stage(
 	output reg_we_o,
 	input [4:0] reg_waddr_i,
 	input reg_we_i,
-	output [31:0] reg_wdata_o,
+	output [63:0] reg_wdata_o,
 	output [4:0] reg_waddr_o
  );
 
 // Input
-wire [31:0] data = data_i;
 wire [31:0] inst = inst_i;
 wire overflow = overflow_i;
 wire unaligned_addr = unaligned_addr_i;
 // Output
-assign reg_wdata_o = inst_MFC0 ? mfc0_data : data;
+assign reg_wdata_o = inst_MFC0 ? {32'b0, mfc0_data} : data_i;
 assign reg_waddr_o = reg_waddr_i;
 assign reg_we_o = ~exception & reg_we_i;
 assign exception_o = exception;
@@ -116,7 +115,7 @@ begin
 		else
 			cp0_epc <= pc_i;
 	else if(inst_MTC0 && inst_i[15:11] == 5'd14)
-		cp0_epc <= data;
+		cp0_epc <= data_i[31:0];
 end
 // cp0_status
 wire [31:0] cp0_status_value;
@@ -127,7 +126,7 @@ begin
 	if(reset_n == 0)
 		cp0_status_bev <= 0;
 	else if(inst_MTC0 && inst_i[15:11] == 5'd12)
-		cp0_status_bev <= data[22];
+		cp0_status_bev <= data_i[22];
 end
 // cp0_status_exl
 reg	cp0_status_exl;
@@ -137,7 +136,7 @@ begin
 		cp0_status_exl <= 0;
 	else if(exception || (inst_MTC0 && inst_i[15:11] == 5'd12) || inst_ERET)
 		cp0_status_exl <= exception
-							| (inst_MTC0 && inst_i[15:11] == 5'd12) & data[1]
+							| (inst_MTC0 && inst_i[15:11] == 5'd12) & data_i[1]
 							| ~inst_ERET
 							;
 end
@@ -152,7 +151,7 @@ begin
 	if(reset_n == 0)
 		cp0_cause_bd <= 0;
 	else if((inst_MTC0 && inst_i[15:11] == 5'd13) || exception)
-		cp0_cause_bd <= (inst_MTC0 && inst_i[15:11] == 5'd13) & data[31] 
+		cp0_cause_bd <= (inst_MTC0 && inst_i[15:11] == 5'd13) & data_i[31] 
 							| delayslot_i;
 end
 // cp0_cause_exccode
@@ -170,7 +169,7 @@ begin
 								| {5{unaligned_addr & ~mem_load_op & ~mem_store_op}} & 5'd4
 								| {5{inst_BREAK}} & 5'd9
 								| {5{inst_SYSCALL}} & 5'd8
-								| {5{inst_MTC0 && inst_i[15:11] == 5'd13}} & data[6:2]
+								| {5{inst_MTC0 && inst_i[15:11] == 5'd13}} & data_i[6:2]
 								| {5{illegal_inst}} & 5'd10
 								;
 								
@@ -185,7 +184,7 @@ begin
 		cp0_badvaddr <= 0;
 	else if(unaligned_addr ||
 		(inst_MTC0 && inst_i[15:11] == 5'd8))
-		cp0_badvaddr <= data;
+		cp0_badvaddr <= data_i[31:0];
 end
 
 // cp0_count
@@ -195,7 +194,7 @@ begin
 	if(reset_n == 0)
 		cp0_count <= 0;
 	else if(inst_MTC0 && inst_i[15:11] == 5'd9)
-		cp0_count <= data;
+		cp0_count <= data_i[31:0];
 	else
 		cp0_count <= cp0_count + cp0_count_step;
 end

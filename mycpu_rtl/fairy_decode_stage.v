@@ -24,7 +24,7 @@ module fairy_decode_stage(
 	
 	// register
 	input [4:0] reg_waddr_i,
-	input [31:0] reg_wdata_i,
+	input [63:0] reg_wdata_i,
 	input	reg_we_i,
 	input [1:0] hilo_we_i,
 	output [4:0] reg_waddr_o,
@@ -146,6 +146,7 @@ wire inst_op_rs_rt = inst_ADDU | inst_SUBU | inst_ADD | inst_SUB
 						| inst_BEQ | inst_BNE
 						| inst_LWL | inst_LWR
 						| inst_SWL | inst_SWR
+						| inst_MULT
 						;
 wire stall = (inst_op_rs | inst_op_rs_rt) & (inst_i[25:21] == reg_waddr) & (|reg_waddr)
 				| (inst_op_rs | inst_op_rs_rt) & (inst_i[25:21] == conflict_addr0_i) & (|conflict_addr0_i)
@@ -289,7 +290,7 @@ wire inst_LUI = inst_i[31:26] == 6'b001111 && inst_i[25:21] == 5'b00000;
 
 // multiply
 wire inst_MULT = inst_i[31:26] == 6'b000000 && inst_i[15:6] == 10'b0000000000
-					|| inst_i[5:0] == 6'b011000;
+					&& inst_i[5:0] == 6'b011000;
 
 // Register
 wire [4:0] reg_raddr0, reg_raddr1;
@@ -321,7 +322,8 @@ begin
 					mem_op | branch_op | jump_op |
 					hilo_op |
 					inst_MTC0 | inst_MFC0 |
-					shift_op | logic_op | inst_LUI
+					shift_op | logic_op | inst_LUI |
+					inst_MULT
 					);
 end
 
@@ -339,8 +341,10 @@ always @(posedge clk)
 begin
 	if(clear | stall)
 		hilo_we <= 0;
-	else
-		hilo_we <= {inst_MTHI, inst_MTLO};
+	else begin
+		hilo_we[1] <= inst_MTHI | inst_MULT;
+		hilo_we[0] <= inst_MTLO | inst_MULT;
+	end
 end
 
 // delayslot
@@ -369,7 +373,7 @@ begin
 	if(reset_n == 0)
 		hi <= 32'b0;
 	else if(hilo_we_i[1])
-		hi <= reg_wdata_i;
+		hi <= reg_wdata_i[63:32];
 end
 
 // lo
@@ -378,7 +382,7 @@ begin
 	if(reset_n == 0)
 		lo <= 32'b0;
 	else if(hilo_we_i[0])
-		lo <= reg_wdata_i;
+		lo <= reg_wdata_i[31:0];
 end
 
 // reg_we
@@ -466,7 +470,7 @@ rf2r1w u0_rf(
 	
 	.we(reg_we_i),
 	.waddr(reg_waddr_i),
-	.wdata(reg_wdata_i),
+	.wdata(reg_wdata_i[31:0]),
 	
 	.regfile_00(regfile_00),
 	.regfile_01(regfile_01),

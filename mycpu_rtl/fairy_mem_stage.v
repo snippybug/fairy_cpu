@@ -35,8 +35,8 @@ module fairy_mem_stage(
 	output illegal_inst_o,
 	input [1:0] hilo_we_i,
 	output [1:0] hilo_we_o,
-	input [31:0] data_i,
-	output [31:0] data_o,
+	input [63:0] data_i,
+	output [63:0] data_o,
    input [31:0] inst_i,
 	output [31:0] inst_o,
 	input [31:0] pc_i,
@@ -68,8 +68,8 @@ assign inst_o = inst;
 assign pc_o = pc;
 assign overflow_o = overflow;
 assign unaligned_addr_o = unaligned_addr;
-assign data_o = mem_load_next_op ? mem_rdata : data;
-assign data_sram_addr_o = data_i;
+assign data_o = mem_load_next_op ? {32'b0, mem_rdata} : data;
+assign data_sram_addr_o = data_i[31:0];
 assign data_sram_cen_o = data_sram_cen;
 assign data_sram_wr_o = data_sram_wr;
 assign data_sram_wdata_o = data_sram_wdata;
@@ -84,7 +84,7 @@ assign debug_data = data;
 wire reset = ~reset_n | exception_i | eret_i;
 
 reg [31:0] inst;
-reg [31:0] data;
+reg [63:0] data;
 reg [31:0] pc;
 reg overflow;
 reg [4:0] reg_waddr;
@@ -195,10 +195,12 @@ end
 always @(posedge clk)
 begin
 	if(reset)
-		data <= 32'b0;
+		data <= 0;
 	else
-		data <= {32{inst_MFLO | inst_MFHI | inst_MTLO | inst_MTHI}} & op1_i
-				| {32{~inst_MFLO & ~inst_MFHI}} & data_i;
+		data <= {64{inst_MFHI | inst_MFLO}} & {32'b0, op1_i}
+				| {64{inst_MTHI}} & {op1_i, 32'b0}
+				| {64{inst_MTLO}} & {32'b0, op1_i}
+				| {64{~inst_MFLO & ~inst_MFHI & ~inst_MTLO & ~inst_MTHI}} & data_i;
 end
 
 wire inst_LB = inst_i[31:26] == 6'b100000;

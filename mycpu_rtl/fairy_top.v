@@ -146,7 +146,7 @@ wire [31:0] decode_op0, decode_op1;
 wire [31:0] decode_inst;
 wire [31:0] decode_pc;
 wire wb_reg_we;
-wire [31:0] wb_reg_wdata;
+wire [63:0] wb_reg_wdata;
 wire [4:0] wb_reg_waddr;
 wire [4:0] decode_reg_waddr;
 wire [4:0] exe_reg_waddr;
@@ -242,7 +242,7 @@ fairy_decode_stage decode_stage(
 	
 );
 
-wire [31:0] exe_data;
+wire [63:0] exe_data;
 wire [31:0] exe_inst;
 wire [31:0] exe_pc;
 wire [31:0] exe_op1;
@@ -289,7 +289,7 @@ fairy_exe_stage exe_stage(
 );
 
 wire [31:0] mem_inst;
-wire [31:0] mem_data;
+wire [63:0] mem_data;
 wire [31:0] mem_pc;
 wire mem_overflow;
 wire mem_unaligned_addr;
@@ -382,7 +382,7 @@ assign regfile_24 = decode_op1;
 assign regfile_25 = debug_decode_hi;
 assign regfile_26 = debug_decode_lo;
 assign regfile_27 = {30'b0, decode_hilo_we};
-assign regfile_28 = {30'b0, exe_hilo_we};
+assign regfile_28 = exe_op1;
 assign regfile_29 = {30'b0, mem_hilo_we};
 assign regfile_30 = mem_pc;
 */
