@@ -1,0 +1,405 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date:    08:30:01 03/26/2017 
+// Design Name: 
+// Module Name:    fairy_decode_stage 
+// Project Name: 
+// Target Devices: 
+// Tool versions: 
+// Description: 
+//
+// Dependencies: 
+//
+// Revision: 
+// Revision 0.01 - File Created
+// Additional Comments: 
+//
+//////////////////////////////////////////////////////////////////////////////////
+module fairy_decode_stage(
+   input clk,
+	input reset_n,
+	
+	input [31:0] inst_i,
+	
+	input	reg_we_i,
+	input [4:0] reg_waddr_i,
+	input [31:0] reg_wdata_i,
+	input [31:0] pc_i,
+	input exception_i,
+	input [31:0] epc_i,
+	
+	output [31:0] op0_o,
+	output [31:0] op1_o,
+	output [31:0] inst_o,
+	output [31:0] pc_o,
+	output [31:0] branch_target_o,
+	output branch_valid_o,
+	output stall_o,
+	
+	output [31:0] debug_reg_raddr0,
+	output [31:0] debug_reg_raddr1,
+	output [31:0] debug_imm_op,
+	output [31:0] debug_reg_rdata1,
+	
+	output [31:0]  regfile_00,
+	output [31:0]  regfile_01,
+	output [31:0]  regfile_02,
+	output [31:0]  regfile_03,
+	output [31:0]  regfile_04,
+	output [31:0]  regfile_05,
+	output [31:0]  regfile_06,
+	output [31:0]  regfile_07,
+	output [31:0]  regfile_08,
+	output [31:0]  regfile_09,
+	output [31:0]  regfile_10,
+	output [31:0]  regfile_11,
+	output [31:0]  regfile_12,
+	output [31:0]  regfile_13,
+	output [31:0]  regfile_14,
+	output [31:0]  regfile_15,
+	output [31:0]  regfile_16,
+	output [31:0]  regfile_17,
+	output [31:0]  regfile_18,
+	output [31:0]  regfile_19,
+	output [31:0]  regfile_20,
+	output [31:0]  regfile_21,
+	output [31:0]  regfile_22,
+	output [31:0]  regfile_23,
+	output [31:0]  regfile_24,
+	output [31:0]  regfile_25,
+	output [31:0]  regfile_26,
+	output [31:0]  regfile_27,
+	output [31:0]  regfile_28,
+	output [31:0]  regfile_29,
+	output [31:0]  regfile_30,
+	output [31:0]  regfile_31
+);
+
+// Input
+wire reg_we = reg_we_i;
+wire [4:0] reg_waddr = reg_waddr_i;
+wire [31:0] reg_wdata = reg_wdata_i;
+wire exception = exception_i;
+wire [31:0] epc = epc_i;
+// Output
+assign inst_o = inst;
+assign op0_o = op0;
+assign op1_o = op1;
+assign pc_o = pc;
+assign branch_target_o = branch_target;
+assign branch_valid_o = branch_valid;
+assign stall_o = inst_ERET; // eret has no delay slot
+assign debug_reg_raddr0 = reg_raddr0;
+assign debug_reg_raddr1 = reg_raddr1;
+assign debug_imm_op = {32{imm_op}};
+assign debug_reg_rdata1 = reg_rdata1;
+
+// Instruction
+wire inst_ADDU = inst_i[31:26] == 6'b000000 && inst_i[10:6] == 5'b00000
+						&& inst_i[5:0] == 6'b100001;
+wire inst_ADDIU = inst_i[31:26] == 6'b001001;
+wire inst_SUBU = inst_i[31:26] == 6'b000000 && inst_i[10:6] == 5'b00000
+						&& inst_i[5:0] == 6'b100011;
+wire inst_ADD = inst_i[31:26] == 6'b000000 && inst_i[10:6] == 5'b00000
+						&& inst_i[5:0] == 6'b100000;
+wire inst_ADDI = inst_i[31:26] == 6'b001000;
+wire inst_SUB = inst_i[31:26] == 6'b000000 && inst_i[10:6] == 5'b00000
+						&& inst_i[5:0] == 6'b100010;
+wire inst_SLT = inst_i[31:26] == 6'b000000 && inst_i[10:6] == 5'b00000
+						&& inst_i[5:0] == 6'b101010;
+wire inst_SLTI = inst_i[31:26] == 6'b001010;
+wire inst_SLTIU = inst_i[31:26] == 6'b001011;
+wire inst_SLTU = inst_i[31:26] == 6'b000000 && inst_i[10:6] == 5'b00000
+						&& inst_i[5:0] == 6'b101011;
+wire imm_op = inst_ADDIU | inst_ADDI | inst_SLTI | inst_SLTIU;
+wire slt_op = inst_SLT | inst_SLTI | inst_SLTIU | inst_SLTU;
+wire add_op = inst_ADDU | inst_ADDIU | inst_ADD | inst_ADDI;
+wire sub_op = inst_SUBU | inst_SUB;
+
+wire inst_LB = inst_i[31:26] == 6'b100000;
+wire inst_LBU = inst_i[31:26] == 6'b100100;
+wire inst_LH = inst_i[31:26] == 6'b100001;
+wire inst_LHU = inst_i[31:26] == 6'b100101;
+wire inst_LW = inst_i[31:26] == 6'b100011;
+wire inst_SB = inst_i[31:26] == 6'b101000;
+wire inst_SH = inst_i[31:26] == 6'b101001;
+wire inst_SW = inst_i[31:26] == 6'b101011;
+wire mem_op = mem_load_op | mem_store_op;
+wire mem_load_op = inst_LB | inst_LBU | inst_LH | inst_LHU | inst_LW;
+wire mem_store_op = inst_SB | inst_SH | inst_SW;
+
+wire inst_ERET = inst_i[31:0] == 32'h42000018;
+
+// Branch
+wire inst_BEQ = inst_i[31:26] == 6'b000100;
+wire inst_BNE = inst_i[31:26] == 6'b000101;
+wire inst_BGEZ = inst_i[31:26] == 6'b000001 && inst_i[20:16] == 5'b00001;
+wire inst_BGTZ = inst_i[31:26] == 6'b000111 && inst_i[20:16] == 5'b00000;
+wire inst_BLEZ = inst_i[31:26] == 6'b000110 && inst_i[20:16] == 5'b00000;
+wire inst_BLTZ = inst_i[31:26] == 6'b000001 && inst_i[20:16] == 5'b00000;
+wire inst_J = inst_i[31:26] == 6'b000010;
+wire inst_JR = inst_i[31:26] == 6'b000000 && inst_i[20:11] == 10'b0000000000
+					&& inst_i[5:0] == 6'b001000;
+wire inst_BGEZAL = inst_i[31:26] == 6'b000001 && inst_i[20:16] == 5'b10001;
+wire inst_BLTZAL = inst_i[31:26] == 6'b000001 && inst_i[20:16] == 5'b10000;
+wire inst_JAL = inst_i[31:26] == 6'b000011;
+wire inst_JALR = inst_i[31:26] == 6'b000000 && inst_i[20:16] == 5'b00000
+					&& inst_i[5:0] == 6'b001001;					
+
+wire branch_op = inst_BEQ | inst_BNE | inst_BGEZ | inst_BGTZ
+					| inst_BLEZ | inst_BLTZ
+					| inst_BGEZAL | inst_BLTZAL
+					;
+wire jump_op = inst_J | inst_JR
+					| inst_JAL | inst_JALR
+					;
+wire branch_valid = (inst_BEQ & (branch_a == branch_b))
+					| (inst_BNE & ~(branch_a == branch_b))
+					| ((inst_BGEZ | inst_BGEZAL) & ~branch_a[31])
+					| (inst_BGTZ & ~branch_a[31] & (|branch_a))
+					| (inst_BLEZ & (branch_a[31] | ~(|branch_a)))
+					| ((inst_BLTZ | inst_BLTZAL) & branch_a[31])
+					| jump_op
+					| inst_ERET
+					;
+wire [31:0] branch_target = {32{branch_op}} & (pc_i + {{14{inst_i[15]}}, inst_i[15:0], 2'b00})
+									| {32{inst_J | inst_JAL}} & {pc_i[31:28], inst_i[25:0], 2'b00}
+									| {32{inst_JR | inst_JALR}} & branch_a
+									| {32{inst_ERET}} & epc
+									;
+wire [31:0] branch_a = reg_rdata0;
+wire [31:0] branch_b = reg_rdata1;
+
+wire [4:0] reg_raddr0, reg_raddr1;
+wire [31:0] reg_rdata0, reg_rdata1;
+assign reg_raddr0 = inst_i[25:21];	// rs
+assign reg_raddr1 = inst_i[20:16];	// rt
+
+reg [31:0] inst;
+reg [31:0] op0, op1;
+reg [31:0] pc;
+
+// inst
+always @(posedge clk)
+begin
+	if(reset_n == 0 || exception)
+		inst <= 32'b0;
+	else
+		inst <= inst_i;
+end
+
+// op0
+always @(posedge clk)
+begin
+	if(reset_n == 0 || exception)
+		op0 <= 32'b0;
+	else
+		op0 <= reg_rdata0;
+end
+
+// op1
+always @(posedge clk)
+begin
+	if(reset_n == 0 || exception)
+		op1 <= 32'b0;
+	else
+		op1 <= reg_rdata1;
+end
+
+// pc
+always @(posedge clk)
+begin
+	if(reset_n == 0 || exception)
+		pc <= 32'b0;
+	else
+		pc <= pc_i;
+end
+
+// Register File
+rf2r1w u0_rf(
+	.clock(clk),
+	
+	.raddr0(reg_raddr0),
+	.rdata0(reg_rdata0),
+	.raddr1(reg_raddr1),
+	.rdata1(reg_rdata1),
+	
+	.we(reg_we),
+	.waddr(reg_waddr),
+	.wdata(reg_wdata),
+	
+	.regfile_00(regfile_00),
+	.regfile_01(regfile_01),
+	.regfile_02(regfile_02),
+	.regfile_03(regfile_03),
+	.regfile_04(regfile_04),
+	.regfile_05(regfile_05),
+	.regfile_06(regfile_06),
+	.regfile_07(regfile_07),
+	.regfile_08(regfile_08),
+	.regfile_09(regfile_09),
+	.regfile_10(regfile_10),
+	/*
+	.regfile_11(regfile_11),
+	.regfile_12(regfile_12),
+	.regfile_13(regfile_13),
+	.regfile_14(regfile_14),
+	.regfile_15(regfile_15),
+	.regfile_16(regfile_16),
+	.regfile_17(regfile_17),
+	.regfile_18(regfile_18),
+	.regfile_19(regfile_19),
+	.regfile_20(regfile_20),
+	*/
+	//.regfile_21(regfile_21),
+	//.regfile_22(regfile_22),
+	//.regfile_23(regfile_23),
+	//.regfile_24(regfile_24),
+	//.regfile_25(regfile_25)
+	//.regfile_26(regfile_26),
+	//.regfile_27(regfile_27),
+	//.regfile_28(regfile_28),
+	//.regfile_29(regfile_29)
+	//.regfile_30(regfile_30),
+	.regfile_31(regfile_31)
+);
+
+endmodule
+
+module rf2r1w(
+	clock,
+	
+	raddr0, rdata0,
+	raddr1, rdata1,
+	
+	we, waddr, wdata,
+	
+	regfile_00,
+	regfile_01,
+	regfile_02,
+	regfile_03,
+	regfile_04,
+	regfile_05,
+	regfile_06,
+	regfile_07,
+	regfile_08,
+	regfile_09,
+	regfile_10,
+	regfile_11,
+	regfile_12,
+	regfile_13,
+	regfile_14,
+	regfile_15,
+	regfile_16,
+	regfile_17,
+	regfile_18,
+	regfile_19,
+	regfile_20,
+	regfile_21,
+	regfile_22,
+	regfile_23,
+	regfile_24,
+	regfile_25,
+	regfile_26,
+	regfile_27,
+	regfile_28,
+	regfile_29,
+	regfile_30,
+	regfile_31
+);
+
+input           clock;
+
+input   [ 4:0]  raddr0;
+output  [31:0]  rdata0;
+input   [ 4:0]  raddr1;
+output  [31:0]  rdata1;
+
+input           we;
+input   [ 4:0]  waddr;
+input   [31:0]  wdata;
+
+output [31:0]  regfile_00;
+output [31:0]  regfile_01;
+output [31:0]  regfile_02;
+output [31:0]  regfile_03;
+output [31:0]  regfile_04;
+output [31:0]  regfile_05;
+output [31:0]  regfile_06;
+output [31:0]  regfile_07;
+output [31:0]  regfile_08;
+output [31:0]  regfile_09;
+output [31:0]  regfile_10;
+output [31:0]  regfile_11;
+output [31:0]  regfile_12;
+output [31:0]  regfile_13;
+output [31:0]  regfile_14;
+output [31:0]  regfile_15;
+output [31:0]  regfile_16;
+output [31:0]  regfile_17;
+output [31:0]  regfile_18;
+output [31:0]  regfile_19;
+output [31:0]  regfile_20;
+output [31:0]  regfile_21;
+output [31:0]  regfile_22;
+output [31:0]  regfile_23;
+output [31:0]  regfile_24;
+output [31:0]  regfile_25;
+output [31:0]  regfile_26;
+output [31:0]  regfile_27;
+output [31:0]  regfile_28;
+output [31:0]  regfile_29;
+output [31:0]  regfile_30;
+output [31:0]  regfile_31;
+
+reg [31:0] regfile[31:0];
+
+// write register
+always @(posedge clock)
+begin
+	if (we) begin
+		regfile[waddr] <= wdata;
+	end
+end
+
+// read register
+assign rdata0 = raddr0 == 5'b0 ? 0 : regfile[raddr0];
+assign rdata1 = raddr1 == 5'b0 ? 0 : regfile[raddr1];
+
+assign regfile_00 = regfile[0];
+assign regfile_01 = regfile[1];
+assign regfile_02 = regfile[2];
+assign regfile_03 = regfile[3];
+assign regfile_04 = regfile[4];
+assign regfile_05 = regfile[5];
+assign regfile_06 = regfile[6];
+assign regfile_07 = regfile[7];
+assign regfile_08 = regfile[8];
+assign regfile_09 = regfile[9];
+assign regfile_10 = regfile[10];
+assign regfile_11 = regfile[11];
+assign regfile_12 = regfile[12];
+assign regfile_13 = regfile[13];
+assign regfile_14 = regfile[14];
+assign regfile_15 = regfile[15];
+assign regfile_16 = regfile[16];
+assign regfile_17 = regfile[17];
+assign regfile_18 = regfile[18];
+assign regfile_19 = regfile[19];
+assign regfile_20 = regfile[20];
+assign regfile_21 = regfile[21];
+assign regfile_22 = regfile[22];
+assign regfile_23 = regfile[23];
+assign regfile_24 = regfile[24];
+assign regfile_25 = regfile[25];
+assign regfile_26 = regfile[26];
+assign regfile_27 = regfile[27];
+assign regfile_28 = regfile[28];
+assign regfile_29 = regfile[29];
+assign regfile_30 = regfile[30];
+assign regfile_31 = regfile[31];
+
+endmodule // rf2r1w
