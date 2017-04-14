@@ -36,6 +36,9 @@ module fairy_decode_stage(
 	input [4:0] conflict_addr1_i,
 	input [1:0] conflict_hilo0_i,
 	input [1:0] conflict_hilo1_i,
+	
+	// stall
+	input stall_i,
 	output stall_o,
 	
 	// exception
@@ -111,10 +114,10 @@ assign op0_o = op0;
 assign op1_o = op1;
 assign pc_o = pc;
 assign branch_target_o = branch_target;
-assign branch_valid_o = ~stall & branch_valid;
+assign branch_valid_o = branch_valid;
 assign reg_waddr_o = reg_waddr;
 assign reg_we_o = reg_we;
-assign stall_o = stall;
+assign stall_o = stall | stall_i;
 assign delayslot_o = delayslot;
 assign hilo_we_o = hilo_we;
 assign unaligned_addr_o = unaligned_addr;
@@ -127,7 +130,9 @@ assign debug_lo = lo;
 assign debug_hi = hi;
 assign debug_delayslot_mark = {32{delayslot_mark}};
 
+// global signal
 wire clear = ~reset_n | exception_i | eret_i;
+wire stall = conflict_stall & ~stall_i;
 
 // data dependence
 wire inst_op_rs = inst_ADDIU | inst_ADDI | inst_SLTI | inst_SLTIU
@@ -146,9 +151,9 @@ wire inst_op_rs_rt = inst_ADDU | inst_SUBU | inst_ADD | inst_SUB
 						| inst_BEQ | inst_BNE
 						| inst_LWL | inst_LWR
 						| inst_SWL | inst_SWR
-						| inst_MULT
+						| inst_MULT | inst_DIVU
 						;
-wire stall = (inst_op_rs | inst_op_rs_rt) & (inst_i[25:21] == reg_waddr) & (|reg_waddr)
+wire conflict_stall = (inst_op_rs | inst_op_rs_rt) & (inst_i[25:21] == reg_waddr) & (|reg_waddr)
 				| (inst_op_rs | inst_op_rs_rt) & (inst_i[25:21] == conflict_addr0_i) & (|conflict_addr0_i)
 				| (inst_op_rs | inst_op_rs_rt) & (inst_i[25:21] == conflict_addr1_i) & (|conflict_addr1_i)
 				| (inst_op_rt | inst_op_rs_rt) & (inst_i[20:16] == reg_waddr) & (|reg_waddr)
@@ -292,6 +297,10 @@ wire inst_LUI = inst_i[31:26] == 6'b001111 && inst_i[25:21] == 5'b00000;
 wire inst_MULT = inst_i[31:26] == 6'b000000 && inst_i[15:6] == 10'b0000000000
 					&& inst_i[5:0] == 6'b011000;
 
+// divide
+wire inst_DIVU = inst_i[31:26] == 6'b000000 && inst_i[15:6] == 10'b0000000000
+					&& inst_i[5:0] == 6'b011011;
+
 // Register
 wire [4:0] reg_raddr0, reg_raddr1;
 wire [31:0] reg_rdata0, reg_rdata1;
@@ -314,45 +323,45 @@ reg illegal_inst;
 // illegal_inst
 always @(posedge clk)
 begin
-	if(clear | stall)
+	if(clear || stall)
 		illegal_inst <= 0;
-	else
+	else if(stall_i == 0)
 		illegal_inst <= ~(
 					add_op | sub_op | slt_op |
 					mem_op | branch_op | jump_op |
 					hilo_op |
 					inst_MTC0 | inst_MFC0 |
 					shift_op | logic_op | inst_LUI |
-					inst_MULT
+					inst_MULT | inst_DIVU
 					);
 end
 
 // unaligned_addr
 always @(posedge clk)
 begin
-	if(clear | stall)
+	if(clear || stall)
 		unaligned_addr <= 0;
-	else
+	else if(stall_i == 0)
 		unaligned_addr <= unaligned_addr_i;
 end
 
 // hilo_we
 always @(posedge clk)
 begin
-	if(clear | stall)
+	if(clear || stall)
 		hilo_we <= 0;
-	else begin
-		hilo_we[1] <= inst_MTHI | inst_MULT;
-		hilo_we[0] <= inst_MTLO | inst_MULT;
+	else if(stall_i == 0) begin
+		hilo_we[1] <= inst_MTHI | inst_MULT | inst_DIVU;
+		hilo_we[0] <= inst_MTLO | inst_MULT | inst_DIVU;
 	end
 end
 
 // delayslot
 always @(posedge clk)
 begin
-	if(clear | stall)
+	if(clear || stall)
 		delayslot <= 0;
-	else 
+	else if(stall_i == 0)
 		delayslot <= delayslot_mark;
 end
 
@@ -361,7 +370,7 @@ always @(posedge clk)
 begin
 	if(clear)
 		delayslot_mark <= 0;
-	else if(stall)
+	else if(stall || stall_i)
 		delayslot_mark <= delayslot_mark;
 	else
 		delayslot_mark <= branch_op | jump_op;
@@ -388,9 +397,9 @@ end
 // reg_we
 always @(posedge clk)
 begin
-	if(clear | stall)
+	if(clear || stall)
 		reg_we <= 0;
-	else
+	else if(stall_i == 0)
 		reg_we <= (|inst_i) & 
 					(add_op | sub_op | slt_op | shift_op
 					| logic_op | inst_LUI
@@ -413,9 +422,9 @@ wire rt_op = imm_op | inst_MFC0;
 // reg_waddr
 always @(posedge clk)
 begin
-	if(clear | stall)
+	if(clear || stall)
 		reg_waddr <= 32'b0;
-	else
+	else if(stall_i == 0)
 		reg_waddr <= rt_op ? inst_i[20:16] :
 					link_op ? 5'd31 : inst_i[15:11];
 end
@@ -423,27 +432,27 @@ end
 // inst
 always @(posedge clk)
 begin
-	if(clear | stall)
+	if(clear || stall)
 		inst <= 32'b0;
-	else
+	else if(stall_i == 0)
 		inst <= inst_i;
 end
 
 // op0
 always @(posedge clk)
 begin
-	if(clear | stall)
+	if(clear || stall)
 		op0 <= 32'b0;
-	else
+	else if(stall_i == 0)
 		op0 <= reg_rdata0;
 end
 
 // op1
 always @(posedge clk)
 begin
-	if(clear | stall)
+	if(clear || stall)
 		op1 <= 32'b0;
-	else
+	else if(stall_i == 0)
 		op1 <= {32{inst_MFLO}} & lo
 				|{32{inst_MFHI}} & hi
 				|{32{inst_MTLO | inst_MTHI}} & reg_rdata0
@@ -453,9 +462,9 @@ end
 // pc
 always @(posedge clk)
 begin
-	if(clear | stall)
+	if(clear || stall)
 		pc <= 32'b0;
-	else
+	else if(stall_i == 0)
 		pc <= pc_i;
 end
 

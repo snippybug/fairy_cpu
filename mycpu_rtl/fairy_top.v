@@ -159,6 +159,7 @@ wire [1:0] mem_hilo_we;
 wire [1:0] decode_hilo_we;
 wire decode_unaligned_addr;
 wire decode_illegal_inst;
+wire decode_stall;
 wire [31:0] debug_decode_delayslot_mark;
 wire [31:0] debug_decode_hi;
 wire [31:0] debug_decode_lo;
@@ -188,6 +189,8 @@ fairy_decode_stage decode_stage(
 	.op0_o(decode_op0),
 	.op1_o(decode_op1),
 	.inst_o(decode_inst),
+	
+	.stall_i(decode_stall),
 	.stall_o(fetch_stall),
 	
 	.conflict_addr0_i(exe_reg_waddr),
@@ -222,7 +225,7 @@ fairy_decode_stage decode_stage(
 	
 	.regfile_15(regfile_15),
 	.regfile_16(regfile_16),
-	
+/*	
 	.regfile_17(regfile_17),
 	.regfile_18(regfile_18),
 	.regfile_19(regfile_19),
@@ -237,7 +240,7 @@ fairy_decode_stage decode_stage(
 	.regfile_28(regfile_28),
 	.regfile_29(regfile_29),
 	.regfile_30(regfile_30),
-	
+*/	
 	.regfile_31(regfile_31)
 	
 );
@@ -263,6 +266,7 @@ fairy_exe_stage exe_stage(
 	.exception_i(wb_exception),
 	.delayslot_i(decode_delayslot),
 	.eret_i(wb_eret),
+	.stall_o(decode_stall),
 	
 	.unaligned_addr_i(decode_unaligned_addr),
 	.unaligned_addr_o(exe_unaligned_addr),
@@ -368,9 +372,9 @@ fairy_writeback_stage wb_stage(
 	.eret_o(wb_eret)
 );
 
-assign ex_pc = mem_pc;
-assign rs_valid = |ex_pc;
-/*
+//assign ex_pc = mem_pc;
+//assign rs_valid = |ex_pc;
+
 assign regfile_17 = mem_inst;
 assign regfile_18 = exe_inst;
 assign regfile_19 = decode_inst;
@@ -385,5 +389,5 @@ assign regfile_27 = {30'b0, decode_hilo_we};
 assign regfile_28 = exe_op1;
 assign regfile_29 = {30'b0, mem_hilo_we};
 assign regfile_30 = mem_pc;
-*/
+
 endmodule // fairytop

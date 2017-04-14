@@ -24,7 +24,11 @@ module fairy_exe_stage(
 	
 	// compution
 	input [31:0] op0_i,
+	input [31:0] op1_i,
 	output [63:0] data_o,
+	
+	// stall
+	output stall_o,
 	
 	// exception
 	input eret_i,
@@ -48,7 +52,6 @@ module fairy_exe_stage(
 	output illegal_inst_o,
 	input [31:0] pc_i,
 	output [31:0] pc_o,
-	input [31:0] op1_i,
 	output [31:0] op1_o,
 	input [31:0] inst_i,
 	output [31:0] inst_o,
@@ -74,6 +77,7 @@ assign delayslot_o = delayslot;
 assign hilo_we_o = hilo_we;
 assign unaligned_addr_o = unaligned_addr;
 assign illegal_inst_o = illegal_inst;
+assign stall_o = stall;
 assign debug_adder_a = adder_a;
 assign debug_adder_b = adder_b;
 assign debug_imm_op = {32{imm_op}};
@@ -81,7 +85,9 @@ assign debug_adder_b0 = adder_b0;
 assign debug_shift_emptybit = {32{shift_emptybit}};
 assign debug_adder_sum = adder_sum;
 
+// global signal
 wire reset = ~reset_n | exception_i | eret_i;
+wire stall = div_stall;
 
 reg [31:0] inst;
 reg [63:0] data;
@@ -98,7 +104,7 @@ reg illegal_inst;
 // illegal_inst
 always @(posedge clk)
 begin
-	if(reset)
+	if(reset || stall)
 		illegal_inst <= 0;
 	else
 		illegal_inst <= illegal_inst_i;
@@ -108,7 +114,7 @@ end
 // unaligned_addr
 always @(posedge clk)
 begin
-	if(reset)
+	if(reset || stall)
 		unaligned_addr <= 0;
 	else
 		unaligned_addr <= unaligned_addr_i;
@@ -117,7 +123,7 @@ end
 // hilo_we
 always @(posedge clk)
 begin
-	if(reset)
+	if(reset || stall)
 		hilo_we <= 0;
 	else
 		hilo_we <= hilo_we_i;
@@ -126,7 +132,7 @@ end
 // delayslot
 always @(posedge clk)
 begin
-	if(reset)
+	if(reset || stall)
 		delayslot <= 0;
 	else
 		delayslot <= delayslot_i;
@@ -135,7 +141,7 @@ end
 // reg_we
 always @(posedge clk)
 begin
-	if(reset)
+	if(reset || stall)
 		reg_we <= 0;
 	else
 		reg_we <= reg_we_i;
@@ -144,8 +150,8 @@ end
 // reg_waddr
 always @(posedge clk)
 begin
-	if(reset)
-		reg_waddr <= 31'b0;
+	if(reset || stall)
+		reg_waddr <= 0;
 	else
 		reg_waddr <= reg_waddr_i;
 end
@@ -154,7 +160,7 @@ end
 // op1
 always @(posedge clk)
 begin
-	if(reset)
+	if(reset || stall)
 		op1 <= 0;
 	else
 		op1 <= op1_i;
@@ -163,8 +169,8 @@ end
 // pc
 always @(posedge clk)
 begin
-	if(reset)
-		pc <= 31'b0;
+	if(reset || stall)
+		pc <= 0;
 	else
 		pc <= pc_i;
 end
@@ -172,8 +178,8 @@ end
 // inst
 always @(posedge clk)
 begin
-	if(reset)
-		inst <= 32'b0;
+	if(reset || stall)
+		inst <= 0;
 	else
 		inst <= inst_i;
 end
@@ -186,11 +192,12 @@ wire [63:0] result = {63'b0, lt} & {64{slt_op}}
 					| {32'b0, lui_result} & {64{inst_LUI}}
 					| {32'b0, op1_i} & {64{inst_MTC0}}
 					| mul_result & {64{inst_MULT}}
+					| {div_r, div_q} & {64{inst_DIVU}}
 					;
 always @(posedge clk)
 begin
-	if(reset)
-		data <= 32'b0;
+	if(reset || stall)
+		data <= 0;
 	else
 		data <= result;
 end
@@ -198,7 +205,7 @@ end
 // overflow
 always @(posedge clk)
 begin
-	if(reset)
+	if(reset || stall)
 		overflow <= 0;
 	else
 		overflow <= adder_overflow & overflow_op;
@@ -279,7 +286,7 @@ wire shift_emptybit = shift_logic ? 1'b0 : shift_operand[31];
 wire shift_left = inst_SLL | inst_SLLV;
 wire [31:0] shift_operand = op1_i;	// from rt
 wire [4:0] shift_count = shift_var_op ? op0_i[4:0] : inst_i[10:6];	// [4:0] from rs : sa
-
+/*
 genvar i;
 generate
 	for(i=0; i<32; i=i+1) begin
@@ -318,7 +325,7 @@ generate
 								;
 	end
 endgenerate
-
+*/
 // Logic
 wire inst_AND = inst_i[31:26] == 6'b000000 && inst_i[10:6] == 5'b00000
 						&& inst_i[5:0] == 6'b100100;
@@ -378,8 +385,7 @@ wire inst_MTC0 = inst_i[31:21] == 11'b01000000100 &&
 
 // multiply
 wire inst_MULT = inst_i[31:26] == 6'b000000 && inst_i[15:6] == 10'b0000000000
-					|| inst_i[5:0] == 6'b011000;
-
+					&& inst_i[5:0] == 6'b011000;
 wire [63:0] mul_result;
 multiplier mul32(
 	.mul_a(op0_i),
@@ -387,6 +393,24 @@ multiplier mul32(
 	.mul_res(mul_result)
 );
 
+// divide
+wire inst_DIVU = inst_i[31:26] == 6'b000000 && inst_i[15:6] == 10'b0000000000
+					&& inst_i[5:0] == 6'b011011;
+wire [31:0] div_q, div_r;
+wire div_valid;
+wire div_stall = inst_DIVU & ~div_valid;
+wire [31:0] div_x = op0_i;
+wire [31:0] div_y = op1_i;
+divider div32(
+	.clk(clk),
+	.reset_n(reset_n),
+	.ready_i(inst_DIVU),
+	.valid_o(div_valid),
+	
+	.dividend_i(div_x),
+	.divisor_i(div_y),
+	.quotient_o(div_q),
+	.remainder_o(div_r)
+);
+
 endmodule // fairy_exe_stage
-
-
