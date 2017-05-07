@@ -331,8 +331,8 @@ begin
 					mem_op | branch_op | jump_op |
 					hilo_op |
 					inst_MTC0 | inst_MFC0 |
-					shift_op | logic_op | inst_LUI |
-					inst_MULT | inst_DIVU
+					shift_op | logic_op | inst_LUI
+					| inst_MULT | inst_DIVU
 					);
 end
 

@@ -225,7 +225,7 @@ fairy_decode_stage decode_stage(
 	
 	.regfile_15(regfile_15),
 	.regfile_16(regfile_16),
-/*	
+/*
 	.regfile_17(regfile_17),
 	.regfile_18(regfile_18),
 	.regfile_19(regfile_19),
@@ -240,7 +240,7 @@ fairy_decode_stage decode_stage(
 	.regfile_28(regfile_28),
 	.regfile_29(regfile_29),
 	.regfile_30(regfile_30),
-*/	
+	*/
 	.regfile_31(regfile_31)
 	
 );
@@ -255,6 +255,7 @@ wire exe_delayslot;
 wire exe_unaligned_addr;
 wire exe_illegal_inst;
 wire [31:0] debug_exe_adder_sum;
+wire exe_stall;
 fairy_exe_stage exe_stage(
 	.clk(aclk),
 	.reset_n(areset_n),
@@ -267,6 +268,7 @@ fairy_exe_stage exe_stage(
 	.delayslot_i(decode_delayslot),
 	.eret_i(wb_eret),
 	.stall_o(decode_stall),
+	.stall_i(exe_stall),
 	
 	.unaligned_addr_i(decode_unaligned_addr),
 	.unaligned_addr_o(exe_unaligned_addr),
@@ -300,6 +302,13 @@ wire mem_unaligned_addr;
 wire mem_reg_we;
 wire mem_delayslot;
 wire mem_illegal_inst;
+wire [31:0] debug_mem_dc_rdata0, debug_mem_dc_rdata1;
+wire [31:0] debug_mem_dc_rtag0, debug_mem_dc_rtag1;
+wire [31:0] debug_mem_dc_valid0, debug_mem_dc_valid1;
+wire [31:0] debug_mem_dc_state, debug_mem_dc_miss;
+wire [31:0] debug_mem_dc_counter;
+wire [31:0] debug_mem_inst;
+	
 fairy_mem_stage mem_stage(
 	.clk(aclk),
 	.reset_n(areset_n),
@@ -314,6 +323,8 @@ fairy_mem_stage mem_stage(
 	.unaligned_addr_o(mem_unaligned_addr),
 	.eret_i(wb_eret),
 	.unaligned_addr_i(exe_unaligned_addr),
+	
+	.stall_o(exe_stall),
 	
 	.hilo_we_i(exe_hilo_we),
 	.hilo_we_o(mem_hilo_we),
@@ -331,14 +342,23 @@ fairy_mem_stage mem_stage(
 	.data_sram_rdata_i(data_sram_rdata),
 	.data_sram_addr_o(data_sram_addr),
 	
+	.debug_dc_rdata0(debug_mem_dc_rdata0),
+	.debug_dc_rdata1(debug_mem_dc_rdata1),
+	.debug_dc_rtag0(debug_mem_dc_rtag0),
+	.debug_dc_rtag1(debug_mem_dc_rtag1),
+	.debug_dc_valid0(debug_mem_dc_valid0),
+	.debug_dc_valid1(debug_mem_dc_valid1),
+	.debug_dc_state(debug_mem_dc_state),
+	.debug_dc_miss(debug_mem_dc_miss),
+	.debug_dc_counter(debug_mem_dc_counter),
+	.debug_inst(debug_mem_inst),
+	
 	.inst_o(mem_inst),
 	.data_o(mem_data),
 	.pc_o(mem_pc),
 	.overflow_o(mem_overflow),
 	.delayslot_o(mem_delayslot)
-	
-	//.debug_mem_rdata(regfile_12),
-	//.debug_data(regfile_16)
+
 );
 
 wire [31:0] debug_wb_mfc0_data;
@@ -378,16 +398,16 @@ fairy_writeback_stage wb_stage(
 assign regfile_17 = mem_inst;
 assign regfile_18 = exe_inst;
 assign regfile_19 = decode_inst;
-assign regfile_20 = fetch_inst;
+assign regfile_20 = debug_mem_inst;
 assign regfile_21 = mem_data;
-assign regfile_22 = exe_data;
-assign regfile_23 = decode_op0;
-assign regfile_24 = decode_op1;
-assign regfile_25 = debug_decode_hi;
-assign regfile_26 = debug_decode_lo;
-assign regfile_27 = {30'b0, decode_hilo_we};
-assign regfile_28 = exe_op1;
-assign regfile_29 = {30'b0, mem_hilo_we};
-assign regfile_30 = mem_pc;
+assign regfile_22 = debug_mem_dc_counter;
+assign regfile_23 = debug_mem_dc_rdata0;
+assign regfile_24 = debug_mem_dc_rdata1;
+assign regfile_25 = debug_mem_dc_rtag0;
+assign regfile_26 = debug_mem_dc_rtag1;
+assign regfile_27 = debug_mem_dc_valid0;
+assign regfile_28 = debug_mem_dc_valid1;
+assign regfile_29 = debug_mem_dc_state;
+assign regfile_30 = debug_mem_dc_miss;
 
 endmodule // fairytop

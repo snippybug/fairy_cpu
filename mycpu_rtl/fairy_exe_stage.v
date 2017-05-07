@@ -27,13 +27,12 @@ module fairy_exe_stage(
 	input [31:0] op1_i,
 	output [63:0] data_o,
 	
-	// stall
-	output stall_o,
-	
 	// exception
 	input eret_i,
 	input exception_i,
 	output overflow_o,
+	input stall_i,
+	output stall_o,
 	
 	// debug
 	output [31:0] debug_adder_a,
@@ -77,7 +76,7 @@ assign delayslot_o = delayslot;
 assign hilo_we_o = hilo_we;
 assign unaligned_addr_o = unaligned_addr;
 assign illegal_inst_o = illegal_inst;
-assign stall_o = stall;
+assign stall_o = stall | stall_i;
 assign debug_adder_a = adder_a;
 assign debug_adder_b = adder_b;
 assign debug_imm_op = {32{imm_op}};
@@ -106,17 +105,16 @@ always @(posedge clk)
 begin
 	if(reset || stall)
 		illegal_inst <= 0;
-	else
+	else if(stall_i == 0)
 		illegal_inst <= illegal_inst_i;
 end
-
 
 // unaligned_addr
 always @(posedge clk)
 begin
 	if(reset || stall)
 		unaligned_addr <= 0;
-	else
+	else if(stall_i == 0)
 		unaligned_addr <= unaligned_addr_i;
 end
 
@@ -125,7 +123,7 @@ always @(posedge clk)
 begin
 	if(reset || stall)
 		hilo_we <= 0;
-	else
+	else if(stall_i == 0)
 		hilo_we <= hilo_we_i;
 end
 
@@ -134,7 +132,7 @@ always @(posedge clk)
 begin
 	if(reset || stall)
 		delayslot <= 0;
-	else
+	else if(stall_i == 0)
 		delayslot <= delayslot_i;
 end
 
@@ -143,7 +141,7 @@ always @(posedge clk)
 begin
 	if(reset || stall)
 		reg_we <= 0;
-	else
+	else if(stall_i == 0)
 		reg_we <= reg_we_i;
 end
 
@@ -152,7 +150,7 @@ always @(posedge clk)
 begin
 	if(reset || stall)
 		reg_waddr <= 0;
-	else
+	else if(stall_i == 0)
 		reg_waddr <= reg_waddr_i;
 end
 
@@ -162,7 +160,7 @@ always @(posedge clk)
 begin
 	if(reset || stall)
 		op1 <= 0;
-	else
+	else if(stall_i == 0)
 		op1 <= op1_i;
 end
 
@@ -171,7 +169,7 @@ always @(posedge clk)
 begin
 	if(reset || stall)
 		pc <= 0;
-	else
+	else if(stall_i == 0)
 		pc <= pc_i;
 end
 
@@ -180,7 +178,7 @@ always @(posedge clk)
 begin
 	if(reset || stall)
 		inst <= 0;
-	else
+	else if(stall_i == 0)
 		inst <= inst_i;
 end
 
@@ -198,7 +196,7 @@ always @(posedge clk)
 begin
 	if(reset || stall)
 		data <= 0;
-	else
+	else if(stall_i == 0)
 		data <= result;
 end
 
@@ -207,7 +205,7 @@ always @(posedge clk)
 begin
 	if(reset || stall)
 		overflow <= 0;
-	else
+	else if(stall_i == 0)
 		overflow <= adder_overflow & overflow_op;
 end
 
